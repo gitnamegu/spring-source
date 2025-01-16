@@ -1,11 +1,15 @@
 package com.dowait.spring;
 
 import com.dowait.spring.bean.ComDemo;
+import com.dowait.spring.component.MineImportBeanDefinitionRegistrar;
 import com.dowait.spring.service.RoleService;
 import com.dowait.spring.third.DemoBeanDefinitionRegistry;
 import com.dowait.spring.third.User;
+import com.dowait.springSource.config.AppConfig;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.context.annotation.AutoProxyRegistrar;
 import org.springframework.context.annotation.Import;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
 
 //@Import(DemoBeanDefinitionRegistry.class)
 public class Demo01 {
@@ -42,10 +46,13 @@ public class Demo01 {
         /*ComDemo comDemo = applicationContext.getBean("comDemo", ComDemo.class);
         System.out.println(comDemo);*/
 
-        RoleService roleService = applicationContext.getBean(RoleService.class);
-        roleService.test();
+        /*RoleService roleService = applicationContext.getBean(RoleService.class);
+        roleService.test();*/
 
+        User user5 = applicationContext.getBean("user5", User.class);
+        System.out.println(user5);
 
+        System.out.println(AutoProxyRegistrar.class.getName());
 
 
     }
