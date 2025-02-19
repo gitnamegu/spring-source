@@ -2,7 +2,7 @@
 查看自定义源码实现：com.dowait.springSource.main.Main01
 
 Spring的bean的生命周期：
-    UserService类 -> 推断构造方法，Spring通过反射的方式创建bean对象 -> 注入依赖属性 -> 初始化前(@PostConstruct) -> 初始化(InitializingBean)
+    UserService类 -> 推断构造方法，Spring通过反射的方式创建bean对象 -> 注入依赖属性(依赖注入) -> 初始化前(@PostConstruct) -> 初始化(InitializingBean)
     -> 初始化后(AOP) -> 代理对象 -> bean
 
     * 通过反射的方式创建对象，推断使用哪个构造方法创建对象。
@@ -12,8 +12,8 @@ Spring的bean的生命周期：
     * 注入依赖。
     * 初始化前。
     初始化前有两种方式实现，第一种是根据class对象筛选出标记了@PostConstruct注解的方法，然后通过反射的方式调用对象实例的这个
-    方法，执行方式如下:method.invode(instance, null); 第二种方式是执行所有的BeanPostProcessor接口的实现类的
-    postProcessBeforeInitialization方法；
+    方法，执行方式如下:method.invode(instance, null)，@PostConstruct只能用于无参的方法上; 第二种方式是执行所有的
+    BeanPostProcessor接口的实现类的postProcessBeforeInitialization方法；
     * 初始化。如果类实现了InitializingBean接口，也就是对象实现了InitializingBean接口，执行对象的afterPropertiesSet方法；
     * 初始化后。执行所有的BeanPostProcessor接口的实现类的postProcessAfterInitialization方法。通常AOP在这里实现，在这一步生成代理
     对象，用来处理事务等场景；
@@ -81,8 +81,8 @@ Spring的bean的生命周期：
 
 
 Scope为Single时，并不意味着这个类只有一个实例。比如以下场景，就会存在多个bean对象。
-    @Compoent
-    @Scope("single")
+    @Component
+    @Scope("singleton")
     public class UserService {
 
     }
@@ -90,7 +90,7 @@ Scope为Single时，并不意味着这个类只有一个实例。比如以下场
     @Configuration
     public class Config {
         @Bean
-        public UserService userService() {
+        public UserService userService2() {
 
         }
     }
@@ -124,7 +124,7 @@ Scope为Single时，并不意味着这个类只有一个实例。比如以下场
     Spring借用了aspectjweaver的@Aspect、@Pointcut、@Before等注解。AOP真正的实现是通过Spring的BeanPostProcessor来做到的，具体实现过程如下：
     1）@EnableAspectJAutoProxy，开启AOP功能。这个注解是spring-context包的注解，spring-context包依赖了spring-aop。
     这个注解import了AspectJAutoProxyRegistrar配置类，这个配置类是ImportBeanDefinitionRegistrar的实现类，ImportBeanDefinitionRegistrar
-    是Spring框架的一个扩展带你，允许开发者在运行时动态的往容器中注册bean，AspectJAutoProxyRegistrar配置类往容器中注入了
+    是Spring框架的一个扩展单元，允许开发者在运行时动态的往容器中注册bean，AspectJAutoProxyRegistrar配置类往容器中注入了
     AnnotationAwareAspectJAutoProxyCreator类的bean，这个bean是BeanPostProcessor的实现类的bean，也就是往容器中注入了
     一个BeanPostProcessor；（ImportBeanDefinitionRegistrar的应用demo参考MineImportBeanDefinitionRegistrar）
     2）bean初始化后，就会调用这个BeanPostProcessor的postProcessAfterInitialization方法，生成代理bean。具体方式是，Spring从容器中
@@ -309,7 +309,7 @@ Spring与mybatis的整合：
 
 
 Spring-context的注解：
-@import：是Spring的一个重要扩展点，作用是给容器中导入组件，可用于以下用途：
+@import：是Spring的一个重要扩展点，作用是给容器中导入组件，可以在组件上使用@import注解。具体的使用场景：
 1）@import导入一个实现了 ImportBeanDefinitionRegistrar 接口的类的bean，然后回调registerBeanDefinitions方法，开发者可动态往Spring容器中注入bean。
 Spring-AOP的@EnableAspectJAutoProxy注解内部就用到了@import；
 public class MineImportBeanDefinitionRegistrar implements ImportBeanDefinitionRegistrar {
@@ -328,7 +328,7 @@ public class MineImportBeanDefinitionRegistrar implements ImportBeanDefinitionRe
 }
 
 @Component
-@Import(MineImportBeanDefinitionRegistrar.class)
+@Import(MineImportBeanDefinitionRegistrar.class) // 在组件上使用@Import注解
 public class Component1 {
     @Bean
     public ComDemo comDemo() {
@@ -364,3 +364,159 @@ public class Demo01 {
 1）@import在Spring-AOP源码中的用途是这样的，开启AOP的注解@EnableAspectJAutoProxy中@Import({AspectJAutoProxyRegistrar.class})，使用
 到了@import注解，在Spring容器中动态注入了BeanPostProcessor类的bean。
 2）在mybatis-spring-boot-autoconfigure包中的MybatisAutoConfiguration类的MapperScannerRegistrarNotFoundConfiguration上，也同样使用了@Import注解
+
+
+Spring如何解决循环依赖
+什么是循环依赖？
+// A依赖了B
+class A {
+    public B b;
+}
+// B依赖了A
+class B {
+    public A a;
+}
+A对象依赖B对象，B对象依赖A对象，就是循环依赖，循环依赖非常简单。但是为什么到Spring语境中就很复杂呢？因为在Spring中，一个对象并不是简单new出来，
+而是会经过bean的一系列生命周期，就是因为bean的生命周期，所以循环依赖在Spring语境中才变得复杂。在Spring中，出现循环依赖的场景很多，有的场景
+Spring帮我们自动解决，有的场景需要程序员来解决。要明白Spring的循环依赖，首先要明白Spring的bean的生命周期。Spring生命周期可以简单的分为：
+1）实例化，原始对象
+2）填充属性
+3）AOP
+4）放入单例池
+循环依赖的问题出现在第二步，即填充属性。按照Spring的生命周期来讲，Spring构建A对象时，要填充B属性，然后到单例池中查找B对象，单例池中没有，
+Spring就会创建B对象的bean，然后创建B对象时，发现又依赖了A对象，单例池中没有A对象，然后再去创建A对象，就没完没了了，这就是循环依赖在生命
+周期中的问题。
+出现循环依赖的时候，Spring的解决方式：
+1）实例化A对象，放入二级缓存，Map<beanName,原始对象>
+2）填充B属性，然后触发创建B对象，实例化B对象，因为B对象依赖了A对象，从单例池中没有找到A对象，然后从二级缓存中找，找到了A原始对象。然后B对象
+就能走完完整的生命周期，最后放入单例池。所以A对象的生命周期的第二步也能执行完。
+
+二级缓存如何解决循环依赖？会不会出现一些问题，所以才采用三级缓存。
+Spring为什么使用三级缓存解决循环依赖？
+
+三级缓存：
+    1）一级缓存，singletonObjects，是ConcurrentMap<beanName:单例bean对象>，如果有AOP时，这里放的就是代理对象，这里的对象是完整的所有属性都赋值好的对象；
+    2）二级缓存，earlySingletonObjects，是HashMap结构，Map<beanName:代理对象|原始对象>，存放已经实例化但尚未完全初始化的bean，也就是正在创建中的对象，此时对象的属性还没有被完全赋值，是不完整的对象，
+    所以不能放入一级缓存中，只能放入二级缓存。当二级缓存中的对象属性都赋值完成后，才会被Spring放入一级缓存；
+    3）三级缓存，singletonFactories，是HashMap结构，Map<beanName:lambda表达式>，也就是存放bean的工厂对象，如果有AOP，根据lambda表达式可以生成代理对象；如果类没有切点，不需要进行AOP，根据lambda表达式可以生成原始对象
+
+三级缓存，依据案例梳理执行逻辑，背景案例：
+public class AService {
+    private BService bService;
+    private int id;
+}
+public class BService {
+    private AService aService;
+    private int id;
+}
+1）实例化AService生成原始对象 -> 将lambda表达式即工厂对象放入三级缓存singletonFactories
+2）填充bService属性 -> 从单例池也就是一级缓存中找bService对象 -> 没有找到 -> 执行实例化BService的逻辑
+3）实例化BService生成原始对象 -> 将lambda表达式即工厂对象放入三级缓存singletonFactories
+4）填充BService对象的aService属性 -> 从单例池中查找aService -> 没有找到 -> （在二级缓存中没有找到AService对象） -> 从三级缓存中拿到AService的工厂对象
+-> 通过工厂对象，执行AService的lambda表达式，获取到早期引用对象或者代理对象，放入二级缓存 -> 将A的早期引用注入到B对象中 -> bService填充其他属性，初始化，然后放入单例池
+5）继续执行AService的生命周期，根据bean的名字从二级缓存找，找到了AService实例 -> 从一级缓存找到B实例注入到属性 -> 初始化A对象 -> 放入一级缓存
+备注：第5步执行完成后，bService实例的AService属性也是最新的内容，代码验证如下：
+public class Demo01 {
+    public static void main(String[] args) {
+        DemoA demoA = new DemoA();
+        demoA.setId(1);
+        // 二级缓存
+        Map<String, DemoA> map = new HashMap<>();
+        map.put("key1", demoA);
+        // 创建DemoB
+        DemoB demoB = new DemoB();
+        demoB.setDemoA(demoA);
+        // 从二级缓存中获取到实例，执行其他属性的赋值逻辑
+        DemoA demoA1 = map.get("key1");
+        demoA1.setId(2);
+        // 发现demoB实例的demoA属性是最新值
+        System.out.println(demoB);
+    }
+
+    @Data
+    @AllArgsConstructor
+    @NoArgsConstructor
+    public static class DemoA {
+        private DemoB demoB;
+        private Integer id;
+    }
+
+    @Data
+    @AllArgsConstructor
+    @NoArgsConstructor
+    public static class DemoB {
+        private DemoA demoA;
+        private Integer id;
+    }
+
+}
+
+
+BeanFactory和FactoryBean的区别：
+BeanFactory是Spring框架的核心接口之一，是Spring IOC容器的基础，负责创建和管理bean。BeanFactory是一个底层接口，通常开发者使用的是它的扩展接口 ApplicationContext，它提供了更多高级功能
+FactoryBean用来封装复杂对象的创建逻辑，通常与BeanDefinitionRegistryPostProcessor一起使用，参考示例代码DemoFactoryBean。
+
+Spring的设计模式：
+工厂模式：BeanFactory
+代理模式：AOP
+单例模式：bean的singleton
+责任链模式：BeanPostProcessor，按照优先级顺序处理
+
+Spring中的bean是线程安全的吗？
+不是线程安全，本身没有对bean做线程安全的处理。因为在Spring的使用场景中，bean一般是无状态的，比如Controller、Service。
+如果要对有状态的bean做线程安全，可以考虑加锁；或者使用prototype作用域
+
+Spring事务如何实现？
+基于数据库底层的事务机制和AOP实现。
+
+Spring的事务传播机制如何实现？
+由Spring实现，通过不同的数据库连接实现。方法调用时，如果复用上一个方法的事务，就复用相同的数据库连接。
+
+常用的SpringBoot注解，及其实现？
+1、@SpringBootApplication，这个注解标识了一个SpringBoot工程，它实际上是另外三个注解的组合，分别是：
+1）@SpringBootConfiguration，这个注解实际上就是一个@Configuration，标识启动类也是配置类
+2）@EnableAutoConfiguration，向容器中导入一个AutoConfigurationImportSelector类的bean，扫描并加载ClassPath下spring.factories中定义的
+自动配置类，将这些配置类自动加载为bean。以druid-spring-boot-starter为例，自动加载DruidDataSourceAutoConfigure类的bean，DruidDataSourceAutoConfigure类中
+又定义了dataSource的bean
+3）@ComponentScan，扫描路径，默认没有配置路径，所以默认扫描启动类所在的当前目录
+2、@Bean、@Controller等注解
+
+熟悉的源码：
+HashMap/线程池/消息队列等
+
+Jdk1.7到1.8，HashMap发生了什么变化？
+1）1.7底层是数组+链表，1.8底层是数组+链表+红黑树，加红黑树的目的是提高HashMap插入和查询的整体效率
+2）1.7链表插入使用的是头插法，1.8中链表的插入是尾插法。因为1.8中插入key和value时，需要判断链表的元素个数，需要遍历链表来统计元素个数，所以正好使用尾插法
+
+Jdk1.7到1.8，JVM发生了什么变化？
+1.7中存在永久代，1.8中没有永久代，替换它的是元空间。元空间占用的内存不是虚拟机内存，而是本地内存。
+
+Spring的大致启动流程
+1）首先进行扫描，扫描得到所有的BeanDefinition对象，并存在一个Map中
+2）筛选出非懒加载的单例的BeanDefinition去创建bean。多例的bean需要在启动过程中创建，多例的bean在每次获取bean时利用BeanDefinition去创建
+3）利用BeanDefinition创建bean就是bean的生命周期，推断构造方法 -> 实例化 -> 填充属性 -> 初始化前 -> 初始化 -> 初始化后
+4）Spring启动过程中还会处理@Import等注解
+
+什么时候@Transactional失效
+Spring事务基于代理来实现，所以@Transactional注解的方法只有通过代理对象访问时才会生效。
+private修饰的方法也会失效，因为CGLib基于父子类实现代理，子类即代理类无法重写private方法，所以也不会生效。
+
+对AOP的理解
+AOP对某些对象进行增强，在执行对象方法前做额外的一些事情，在OOP的设计下，可能会引入大量重复代码，而通过AOP可以避免大量代码的重复。
+
+对IOC的理解
+容器、控制反转、依赖注入。
+容器，实际上是map
+
+Spring Bean 的生命周期
+1）解析类得到BeanDefinition
+2）推断构造方法，实例化对象
+3）对@Autowired注解的属性进行填充
+4）回调Aware方法，比如BeanNameAware、BeanFactoryAware
+5）调用BeanPostProcessor的初始化前的方法
+6）调用初始化方法
+7）调用BeanPostProcessor的初始化后的方法，这里会进行AOP
+8）如果是单例的bean，放入单例池
+9）Spring容器关闭时，调用DisposableBean中 destory()方法
+
+

@@ -6,10 +6,16 @@ import com.dowait.spring.service.RoleService;
 import com.dowait.spring.third.DemoBeanDefinitionRegistry;
 import com.dowait.spring.third.User;
 import com.dowait.springSource.config.AppConfig;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.AutoProxyRegistrar;
 import org.springframework.context.annotation.Import;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
+
+import java.util.HashMap;
+import java.util.Map;
 
 //@Import(DemoBeanDefinitionRegistry.class)
 public class Demo01 {
@@ -49,11 +55,43 @@ public class Demo01 {
         /*RoleService roleService = applicationContext.getBean(RoleService.class);
         roleService.test();*/
 
-        User user5 = applicationContext.getBean("user5", User.class);
+        /*User user5 = applicationContext.getBean("user5", User.class);
         System.out.println(user5);
 
-        System.out.println(AutoProxyRegistrar.class.getName());
+        System.out.println(AutoProxyRegistrar.class.getName());*/
+
+
+        DemoA demoA = new DemoA();
+        demoA.setId(1);
+        // 二级缓存
+        Map<String, DemoA> map = new HashMap<>();
+        map.put("key1", demoA);
+        // 创建DemoB
+        DemoB demoB = new DemoB();
+        demoB.setDemoA(demoA);
+        // 从二级缓存中获取到实例，执行其他属性的赋值逻辑
+        DemoA demoA1 = map.get("key1");
+        demoA1.setId(2);
+        // 发现demoB实例的demoA属性是最新值
+        System.out.println(demoB);
 
 
     }
+
+    @Data
+    @AllArgsConstructor
+    @NoArgsConstructor
+    public static class DemoA {
+        private DemoB demoB;
+        private Integer id;
+    }
+
+    @Data
+    @AllArgsConstructor
+    @NoArgsConstructor
+    public static class DemoB {
+        private DemoA demoA;
+        private Integer id;
+    }
+
 }
