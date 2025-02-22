@@ -479,6 +479,14 @@ Spring的事务传播机制如何实现？
 自动配置类，将这些配置类自动加载为bean。以druid-spring-boot-starter为例，自动加载DruidDataSourceAutoConfigure类的bean，DruidDataSourceAutoConfigure类中
 又定义了dataSource的bean
 3）@ComponentScan，扫描路径，默认没有配置路径，所以默认扫描启动类所在的当前目录
+在使用SpringBoot时，加上@SpringBootApplication注解，SpringBoot就会进行扫描，就会导入自动配置类并解析。案例：
+@SpringBootApplication
+public class Application {
+    public static void main(String[] args) {
+        ConfigurableApplicationContext configurableApplicationContext = SpringApplication.run(Application.class, args);
+    }
+}
+SpringApplication.run(Application.class, args);SpringBoot解析启动类，创建Spring容器，而Application就是创建容器时的配置类，Spring解析这个配置类从而创建bean。
 2、@Bean、@Controller等注解
 
 熟悉的源码：
@@ -518,5 +526,96 @@ Spring Bean 的生命周期
 7）调用BeanPostProcessor的初始化后的方法，这里会进行AOP
 8）如果是单例的bean，放入单例池
 9）Spring容器关闭时，调用DisposableBean中 destory()方法
+
+SpringBoot中的spring.factories文件有什么用？
+SpringBoot项目启动时，会找到项目中所有的spring.factories文件，包括jar中的spring.factories，从而往容器中注入spring.factories文件中
+指定的配置类、bean，这样使得SpringBoot做扩展很容易，只要引入一个jar，jar中有spring.factories文件，就可以把bean注入到容器中。
+
+如何理解SpringBoot的自动配置？
+在Spring中，我们需要配置很多的bean，比如用事务时，要配置DataSourceTransactionManager的bean对象，用MyBatis时，要配置SqlSessionFactory的bean对象。
+而用SpringBoot时，不用再做这些配置了，因为SpringBoot帮我们配置好了，怎么做到的呢？其实就是SpringBoot内置了很多的配置类，比如DataSourceTransactionManagerAutoConfiguration、
+MybatisAutoConfiguration，自动完成bean的容器注入。
+
+SpringMVC处理请求的流程
+SpringMVC是Spring对web框架的一个解决方案，提供了一个总的前端控制器Servlet用来接收请求，然后定义一套路由策略。
+1）项目启动时，创建dispatcherServlet的bean
+2）初始化RequestMappingHandlerMapping，解析标记@RequestMapping的方法，将path作为key，method作为value保存到一个map中
+3）当dispatcherServlet收到请求后，就从map中获取到对应的method
+4）SpringMVC从request中解析uri，设置到method方法的传参
+详细的流程如下：
+1）用户发送请求至前端控制器 DispatcherServlet
+2）DispatcherServlet 收到请求调用 HandlerMapping 处理器映射器
+3）处理器映射器找到具体的处理器(可以根据 xm| 配置、注解进行査找)，生成处理器及处理器拦截器(如果有则生成)一并返回给 DispatcherServlet
+4）DispatcherServlet 调用 HandlerAdapter 处理器适配器
+5）HandlerAdapter 经过适配调用具体的处理器(Controller，也叫后端控制器)
+6）Controller 执行完成返回 ModelAndView
+7）HandlerAdapter 将controller 执行结果 ModelAndView 返回给 DispatcherServlet
+8）DispatcherServlet 将 ModelAndView 传给 ViewResolver 视图解析器
+9）ViewResolver 解析后返回具体 View
+10）DispatcherServlet 根据 View 进行渲染视图(即将模型数据填充至视图中)
+11）DispatcherServlet 响应用户
+
+SpringMVC的控制器是不是单例模式，如果是，如何保证线程安全
+控制器是单例模式。
+一般情况下，控制器是无状态的，以及依赖的Service属性都是无状态的，所以可以保证线程安全。
+
+SpringBoot的自动配置原理
+@Import + @Configuration + Spring spi
+自动配置类由各个starter提供，使用@Configuration+@Bean定义配置类，放到META-INF/spring.factories下。
+使用Spring spi扫描META-INF/spring.factories下的配置类。
+使用@lmport导入自动配置类。
+参考语雀的"SpringBoot的自动配置原理图"
+以mybatis-spring-boot-starter为例：
+项目的启动类有@SpringBootApplication注解，注解关系是: @SpringBootApplication -> @EnableAutoConfiguration -> @Import(AutoConfigurationImportSelector.class)，
+AutoConfigurationImportSelector类是一个ImportSelector接口的实现类，所以SpringBoot启动的时候会主动执行这个类的selectImports方法，这个方法
+会查找ClassPath下所有的spring.factories文件，将文件中标记的所有的类的名字作为数组返回，然后SpringBoot就会将这些类创建为bean。在mybatis-spring-boot-starter的具体场景中，
+依赖关系链：mybatis-spring-boot-starter -> mybatis-spring-boot-autoconfigure -> spring-boot-autoconfigure，
+mybatis-spring-boot-autoconfigure的spring.factories文件内容是org.mybatis.spring.boot.autoconfigure.MybatisAutoConfiguration，
+所以springboot启动时会自动创建MybatisAutoConfiguration类的bean，MybatisAutoConfiguration类又通过@Bean的方式定义了SqlSessionFactory的bean，
+代码是:
+@Configuration
+@ConditionalOnClass({SqlSessionFactory.class, SqlSessionFactoryBean.class})
+@ConditionalOnBean({DataSource.class})
+@EnableConfigurationProperties({MybatisProperties.class})
+@AutoConfigureAfter({DataSourceAutoConfiguration.class})
+public class MybatisAutoConfiguration {
+    @Bean
+    @ConditionalOnMissingBean
+    public SqlSessionFactory sqlSessionFactory(DataSource dataSource) throws Exception {...}
+}
+构建sqlSessionFactory的bean的时候，有DataSource的传参，所有又会创建DataSource的bean。
+DataSource的bean的创建过程，mybatis-spring-boot-autoconfigure的spring.factories文件内容有org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration，
+所以就会创建DataSourceAutoConfiguration的bean，DataSourceAutoConfiguration类import了EmbeddedDataSourceConfiguration类，最终创建了dataSource的bean，
+代码是:
+public class DataSourceAutoConfiguration {
+    @Configuration(proxyBeanMethods = false)
+    @Conditional(EmbeddedDatabaseCondition.class)
+    @ConditionalOnMissingBean({ DataSource.class, XADataSource.class })
+    @Import(EmbeddedDataSourceConfiguration.class)
+    protected static class EmbeddedDatabaseConfiguration {
+
+    }
+}
+
+@Configuration(proxyBeanMethods = false)
+@EnableConfigurationProperties(DataSourceProperties.class)
+public class EmbeddedDataSourceConfiguration implements BeanClassLoaderAware {
+
+	private ClassLoader classLoader;
+
+	@Override
+	public void setBeanClassLoader(ClassLoader classLoader) {
+		this.classLoader = classLoader;
+	}
+
+	@Bean(destroyMethod = "shutdown")
+	public EmbeddedDatabase dataSource(DataSourceProperties properties) {
+		return new EmbeddedDatabaseBuilder().setType(EmbeddedDatabaseConnection.get(this.classLoader).getType())
+				.setName(properties.determineDatabaseName()).build();
+	}
+
+}
+
+
 
 
